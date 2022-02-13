@@ -112,13 +112,14 @@ void onControlChange(byte channel, byte number, byte value) {
       break;
   }
 }
-/*
-  void onProgramChange(byte channel, byte number) {
-  channel++;
-  if (channel >= 15)
-    channel = 0;
+
+void onProgramChange(byte channel, byte number) {
+  morphReset();
+  if(switchHoldThread.inProgress) {
+    switchHoldThread.stopRequested = true;
   }
-*/
+}
+
 void onNoteOn(byte channel, byte note, byte velocity) {
   if (channel != HX_STOMP_MIDI_CHANNEL) {
     return;
@@ -177,7 +178,7 @@ void onNoteOff(byte channel, byte note, byte velocity) {
 
 void setup() {
   midiSerial.begin(31250);
-  // hxMidiInterface.setHandleProgramChange(onProgramChange);
+  hxMidiInterface.setHandleProgramChange(onProgramChange);
   hxMidiInterface.setHandleControlChange(onControlChange);
   hxMidiInterface.setHandleNoteOn(onNoteOn);
   hxMidiInterface.setHandleNoteOff(onNoteOff);
