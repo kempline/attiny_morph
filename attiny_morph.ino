@@ -7,7 +7,6 @@ enum MorphDir {
   dec = 1
 };
 
-
 class OpenMorph : public pt {
   public:
     bool stopRequested = false;
@@ -47,14 +46,14 @@ uint16_t HX_MORPH_1_MORPH_DEC_TIME_MS = 0;
 #define C1 24
 
 SoftwareSerial midiSerial(0, 1);
-MIDI_CREATE_INSTANCE(HardwareSerial, midiSerial, hxMidiInterface);
+// MIDI_CREATE_INSTANCE(HardwareSerial, midiSerial, hxMidiInterface);
 
-uint8_t prog_no = 0;
+// uint8_t prog_no = 0;
 
 static struct OpenMorph morphThread;
 static struct Switch3Hold switchHoldThread;
 
-void onMorphBegin(uint8_t controlId, MorphDir dir, uint8_t startValue, uint8_t stopValue) {}
+// void onMorphBegin(uint8_t controlId, MorphDir dir, uint8_t startValue, uint8_t stopValue) {}
 
 void onMorphUpdate(uint8_t controlId, uint8_t currentValue) {
   switch (controlId) {
@@ -73,7 +72,7 @@ void onMorphUpdate(uint8_t controlId, uint8_t currentValue) {
   }
 }
 
-void onMorphEnd(uint8_t controlId, MorphDir dir) {}
+// void onMorphEnd(uint8_t controlId, MorphDir dir) {}
 
 void onControlChange(byte channel, byte number, byte value) {
   if (channel != HX_STOMP_MIDI_CHANNEL) {
@@ -87,13 +86,14 @@ void onControlChange(byte channel, byte number, byte value) {
     case(HX_MORPH_0_SET_DEC_TIME_CC):
       HX_MORPH_0_MORPH_DEC_TIME_MS = value * 100;
       break;
+    /*  
     case(HX_MORPH_1_SET_INC_TIME_CC):
       HX_MORPH_1_MORPH_INC_TIME_MS = value * 100;
       break;
     case(HX_MORPH_1_SET_DEC_TIME_CC):
       HX_MORPH_1_MORPH_DEC_TIME_MS = value * 100;
       break;
-        
+     
     case (68):
       morphThread.controllerId = 0;
       if (morphThread.dir == MorphDir::inc)
@@ -108,6 +108,7 @@ void onControlChange(byte channel, byte number, byte value) {
       else
         morphExec(MorphDir::inc, HX_MORPH_1_MORPH_INC_TIME_MS);
       break;
+    */
     default:
       break;
   }
@@ -178,17 +179,18 @@ void onNoteOff(byte channel, byte note, byte velocity) {
 
 void setup() {
   midiSerial.begin(31250);
-  hxMidiInterface.setHandleProgramChange(onProgramChange);
+  /*hxMidiInterface.setHandleProgramChange(onProgramChange);
   hxMidiInterface.setHandleControlChange(onControlChange);
   hxMidiInterface.setHandleNoteOn(onNoteOn);
-  hxMidiInterface.setHandleNoteOff(onNoteOff);
+  hxMidiInterface.setHandleNoteOff(onNoteOff);*/
 
   PT_INIT(&morphThread);
   PT_INIT(&switchHoldThread);
 }
 
 void loop() {
-  hxMidiInterface.read();
+  //hxMidiInterface.read();
+  midiSerial.read();
   do_morph(&morphThread);
   onSwitchHold(&switchHoldThread);
 }
@@ -253,7 +255,7 @@ void do_morph(struct OpenMorph *pt) {
     morphTime = pt->morphTime;
     delayTime = morphTime / 128.0;
 
-    onMorphBegin(pt->controllerId, pt->dir, start_value, stop_value);
+    // onMorphBegin(pt->controllerId, pt->dir, start_value, stop_value);
 
     if (morphTime == 0) {
       onMorphUpdate(pt->controllerId, stop_value);
@@ -265,7 +267,7 @@ void do_morph(struct OpenMorph *pt) {
       while (current_value != stop_value) {
         if (pt->stopRequested) {
           onMorphUpdate(pt->controllerId, stop_value);
-          onMorphEnd(pt->controllerId, pt->dir);
+          // onMorphEnd(pt->controllerId, pt->dir);
           pt->stopRequested = false;
           break;
         }
