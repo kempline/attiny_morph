@@ -10,17 +10,20 @@ enum MorphDir {
 
 class OpenMorph : public pt {
   public:
-    // OpenMorph();
-    //void registerIOpenMorphCb(IOpenMorph *p_pIOpenMorphCb);
     bool stopRequested = false;
     bool inProgress = false;
     uint8_t controllerId = 0;
     MorphDir dir;
     uint16_t morphTime;    
-    //void reset();
-    //void exec(MorphDir dir, uint16_t morph_time);
-    //static int do_morph(struct OpenMorph *pt);
 };
+
+
+class Switch3Hold : public pt {
+  public:
+    bool stopRequested = false;
+    bool inProgress = false;
+};
+
 
 #define HX_MORPH_0_CONTROL_CC 18
 uint16_t HX_MORPH_0_MORPH_INC_TIME_MS = 0;
@@ -31,7 +34,11 @@ uint16_t HX_MORPH_1_MORPH_INC_TIME_MS = 0;
 uint16_t HX_MORPH_1_MORPH_DEC_TIME_MS = 0;
 
 #define HX_STOMP_MIDI_CHANNEL 4
+#define HX_STOMP_TOGGLE_TUNER_CC 68
 #define PROGRAM_CHANGE_NOTE_C_m1 0
+
+#define BANDHELPER_NOTE_B_m1 11
+#define BAND_HELPER_MIDI_CHANNEL 3
 
 #define C0 12
 #define C1 24
@@ -41,9 +48,8 @@ MIDI_CREATE_INSTANCE(HardwareSerial, midiSerial, hxMidiInterface);
 
 uint8_t prog_no = 0;
 
-static struct OpenMorph morph1;
-
-
+static struct OpenMorph morphThread;
+static struct Switch3Hold switchHoldThread;
 
 void onMorphBegin(uint8_t controlId, MorphDir dir, uint8_t startValue, uint8_t stopValue) {}
 
@@ -64,8 +70,7 @@ void onMorphUpdate(uint8_t controlId, uint8_t currentValue) {
   }
 }
 
-void onMorphEnd(uint8_t controlId, MorphDir dir) { }
-
+void onMorphEnd(uint8_t controlId, MorphDir dir) {}
 
 void onControlChange(byte channel, byte number, byte value) {
   if (channel != HX_STOMP_MIDI_CHANNEL) {
@@ -74,15 +79,15 @@ void onControlChange(byte channel, byte number, byte value) {
 
   switch (number) {
     case (68):
-      morph1.controllerId = 0;
-      if (morph1.dir == MorphDir::inc)
+      morphThread.controllerId = 0;
+      if (morphThread.dir == MorphDir::inc)
         morphExec(MorphDir::dec, HX_MORPH_0_MORPH_DEC_TIME_MS);
       else
         morphExec(MorphDir::inc, HX_MORPH_0_MORPH_INC_TIME_MS);
       break;
     case (69):
-      morph1.controllerId = 1;
-      if (morph1.dir == MorphDir::inc)
+      morphThread.controllerId = 1;
+      if (morphThread.dir == MorphDir::inc)
         morphExec(MorphDir::dec, HX_MORPH_1_MORPH_DEC_TIME_MS);
       else
         morphExec(MorphDir::inc, HX_MORPH_1_MORPH_INC_TIME_MS);
@@ -108,12 +113,15 @@ void onNoteOn(byte channel, byte note, byte velocity) {
       midiSerial.write(velocity);
       break;
     case (C0):
-      //morph1.controllerId = 0;
+      morphThread.controllerId = 0;
       morphExec(MorphDir::inc, HX_MORPH_0_MORPH_INC_TIME_MS);
       break;
     case (C1):
-      //morph1.controllerId = 1;
+      morphThread.controllerId = 1;
       morphExec(MorphDir::inc, HX_MORPH_1_MORPH_INC_TIME_MS);
+      break;
+    case(BANDHELPER_NOTE_B_m1):
+      switchHoldThread.inProgress = true;
       break;
     default:
       break;
@@ -127,15 +135,23 @@ void onNoteOff(byte channel, byte note, byte velocity) {
 
   switch (note) {
     case (C0):
-      morph1.controllerId = 0;
-      if (morph1.dir == MorphDir::inc) {
+      morphThread.controllerId = 0;
+      if (morphThread.dir == MorphDir::inc) {
         morphExec(MorphDir::dec, HX_MORPH_0_MORPH_DEC_TIME_MS);
       }
       break;
     case (C1):
-      morph1.controllerId = 1;
-      if (morph1.dir == MorphDir::inc) {
+      morphThread.controllerId = 1;
+      if (morphThread.dir == MorphDir::inc) {
         morphExec(MorphDir::dec, HX_MORPH_1_MORPH_DEC_TIME_MS);
+      }
+      break;
+    case(BANDHELPER_NOTE_B_m1):
+      if(switchHoldThread.inProgress) {
+        switchHoldThread.stopRequested = true;
+        midiSerial.write(BAND_HELPER_MIDI_CHANNEL + 0xB0);
+        midiSerial.write(83);
+        midiSerial.write(0x7F);
       }
       break;
     default:
@@ -150,14 +166,42 @@ void setup() {
   hxMidiInterface.setHandleNoteOn(onNoteOn);
   hxMidiInterface.setHandleNoteOff(onNoteOff);
 
-  PT_INIT(&morph1);
+  PT_INIT(&morphThread);
+  PT_INIT(&switchHoldThread);
 }
 
 void loop() {
   hxMidiInterface.read();
-  do_morph(&morph1);
+  do_morph(&morphThread);
+  onSwitchHold(&switchHoldThread);
 }
 
+void onSwitchHold(struct Switch3Hold *pt) {
+  static uint16_t lastMeasurePoint = 0;
+  static uint16_t holdBegin = 0;
+  PT_BEGIN(pt);
+  while (1) {
+    PT_WAIT_UNTIL(pt, true == pt->inProgress);
+
+    holdBegin = millis();
+    
+    while (holdBegin + 2000 < millis()) {
+      lastMeasurePoint = millis();
+      if (pt->stopRequested) {
+        pt->stopRequested = false;
+        break;
+      }
+      PT_WAIT_UNTIL(pt, millis() - lastMeasurePoint > 100);
+    }
+    if (false == pt->stopRequested) {
+      midiSerial.write(HX_STOMP_MIDI_CHANNEL + 0xB0);
+      midiSerial.write(HX_STOMP_TOGGLE_TUNER_CC);
+      midiSerial.write(0x01);
+    }
+    pt->inProgress = false;
+  }
+  PT_END(pt);
+}
 
 void do_morph(struct OpenMorph *pt) {
   static uint16_t delayTime = pt->morphTime / 128.0;
@@ -221,23 +265,23 @@ void do_morph(struct OpenMorph *pt) {
 }
 
 void morphReset() {
-  if(morph1.inProgress) {
-    morph1.stopRequested = true;
-    delay(1.5 * (morph1.morphTime / 128.0));
-    morph1.inProgress = false;
+  if(morphThread.inProgress) {
+    morphThread.stopRequested = true;
+    delay(1.5 * (morphThread.morphTime / 128.0));
+    morphThread.inProgress = false;
   }
-  morph1.dir = MorphDir::dec;
+  morphThread.dir = MorphDir::dec;
 }
 
 void morphExec(MorphDir dir, uint16_t morph_time) {
 
-  if(morph1.dir != MorphDir::inc && morph1.dir != MorphDir::dec)
+  if(morphThread.dir != MorphDir::inc && morphThread.dir != MorphDir::dec)
     return;
   
   morphReset();
   
-  morph1.dir = dir;
-  morph1.morphTime = morph_time;
+  morphThread.dir = dir;
+  morphThread.morphTime = morph_time;
   
-  morph1.inProgress = true; // activates the thread
+  morphThread.inProgress = true; // activates the thread
 }
