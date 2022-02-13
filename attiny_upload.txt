@@ -1,0 +1,9 @@
+1. Clone repro here: https://github.com/micronucleus/micronucleus
+2. Navigate to MICRONUCLEUS_HOME/commandline/builds/x86_64-apple-darwin
+
+3. In Arduino, selest menu Sketch->export compiled Binary
+This will generate a hex file in the projects home folder (<path_to_hex_file>)
+
+4. run/execute 
+
+./micronucleus --run <path_to_hex_file>
