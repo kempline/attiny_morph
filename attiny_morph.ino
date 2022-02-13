@@ -24,11 +24,14 @@ class Switch3Hold : public pt {
     bool inProgress = false;
 };
 
-
+#define HX_MORPH_0_SET_INC_TIME_CC 15
+#define HX_MORPH_0_SET_DEC_TIME_CC 16
 #define HX_MORPH_0_CONTROL_CC 18
 uint16_t HX_MORPH_0_MORPH_INC_TIME_MS = 0;
 uint16_t HX_MORPH_0_MORPH_DEC_TIME_MS = 2000;
 
+#define HX_MORPH_1_SET_INC_TIME_CC 20
+#define HX_MORPH_1_SET_DEC_TIME_CC 21
 #define HX_MORPH_1_CONTROL_CC 23
 uint16_t HX_MORPH_1_MORPH_INC_TIME_MS = 0;
 uint16_t HX_MORPH_1_MORPH_DEC_TIME_MS = 0;
@@ -78,6 +81,19 @@ void onControlChange(byte channel, byte number, byte value) {
   }
 
   switch (number) {
+    case(HX_MORPH_0_SET_INC_TIME_CC):
+      HX_MORPH_0_MORPH_INC_TIME_MS = value * 100;
+      break;
+    case(HX_MORPH_0_SET_DEC_TIME_CC):
+      HX_MORPH_0_MORPH_DEC_TIME_MS = value * 100;
+      break;
+    case(HX_MORPH_1_SET_INC_TIME_CC):
+      HX_MORPH_1_MORPH_INC_TIME_MS = value * 100;
+      break;
+    case(HX_MORPH_1_SET_DEC_TIME_CC):
+      HX_MORPH_1_MORPH_DEC_TIME_MS = value * 100;
+      break;
+        
     case (68):
       morphThread.controllerId = 0;
       if (morphThread.dir == MorphDir::inc)
@@ -188,7 +204,6 @@ void onSwitchHold(struct Switch3Hold *pt) {
     while (holdBegin + 2000 < millis()) {
       lastMeasurePoint = millis();
       if (pt->stopRequested) {
-        pt->stopRequested = false;
         break;
       }
       PT_WAIT_UNTIL(pt, millis() - lastMeasurePoint > 100);
@@ -197,6 +212,9 @@ void onSwitchHold(struct Switch3Hold *pt) {
       midiSerial.write(HX_STOMP_MIDI_CHANNEL + 0xB0);
       midiSerial.write(HX_STOMP_TOGGLE_TUNER_CC);
       midiSerial.write(0x01);
+    }
+    else {
+      pt->stopRequested = false;
     }
     pt->inProgress = false;
   }
