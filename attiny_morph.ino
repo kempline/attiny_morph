@@ -55,9 +55,6 @@ uint16_t HX_MORPH_1_MORPH_DEC_TIME_MS = 0;
 #define CC 0xb0
 
 SoftwareSerial midiSerial(0, 1);
-// MIDI_CREATE_INSTANCE(HardwareSerial, midiSerial, hxMidiInterface);
-
-// uint8_t prog_no = 0;
 
 static struct OpenMorph morphThread;
 static struct Switch3Hold switchHoldThread;
@@ -186,8 +183,6 @@ void onNoteOff(byte channel, byte note, byte velocity) {
   }
 }
 
-
-
 void midiRead() {
   if (!midiSerial.available()) 
     return;
@@ -196,10 +191,10 @@ void midiRead() {
   
   // check for command
   switch(midiInByte & 0xf0) {
-    case(NOTE_OFF):   // Note Off
-    case(NOTE_ON):   // Note On
-    case(CC):   // Continuous Controller
-    case(PC):   // Patch Change
+    case(NOTE_OFF):
+    case(NOTE_ON):
+    case(CC):
+    case(PC):
       midiInPos = 0;
       midiBufferIn[midiInPos++] = midiInByte;
       break;
@@ -209,7 +204,7 @@ void midiRead() {
       break;
   }
   midiInPos %= 16;
-  
+
   if(midiInPos == 2 && midiBufferIn[0] == 0xc0) {
     onProgramChange(midiBufferIn[0] & 0x0f, midiBufferIn[1]);
     midiInPos = 0;
@@ -233,19 +228,13 @@ void midiRead() {
 
 void setup() {
   midiSerial.begin(31250);
-  /*hxMidiInterface.setHandleProgramChange(onProgramChange);
-  hxMidiInterface.setHandleControlChange(onControlChange);
-  hxMidiInterface.setHandleNoteOn(onNoteOn);
-  hxMidiInterface.setHandleNoteOff(onNoteOff);*/
-
   PT_INIT(&morphThread);
   PT_INIT(&switchHoldThread);
 }
 
 void loop() {
-  //hxMidiInterface.read();
   midiRead();
-  do_morph(&morphThread);
+  onMorph(&morphThread);
   onSwitchHold(&switchHoldThread);
 }
 
@@ -278,7 +267,7 @@ void onSwitchHold(struct Switch3Hold *pt) {
   PT_END(pt);
 }
 
-void do_morph(struct OpenMorph *pt) {
+void onMorph(struct OpenMorph *pt) {
   static uint16_t delayTime = pt->morphTime / 128.0;
   static uint16_t lastMorphUpdate = 0;
   static uint8_t i;
