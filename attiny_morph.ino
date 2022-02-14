@@ -23,6 +23,10 @@ class Switch3Hold : public pt {
     bool inProgress = false;
 };
 
+uint8_t midiInByte;
+uint8_t midiBufferIn[16];
+uint8_t midiInPos = 0;
+
 #define HX_MORPH_0_SET_INC_TIME_CC 15
 #define HX_MORPH_0_SET_DEC_TIME_CC 16
 #define HX_MORPH_0_CONTROL_CC 18
@@ -44,6 +48,11 @@ uint16_t HX_MORPH_1_MORPH_DEC_TIME_MS = 0;
 
 #define C0 12
 #define C1 24
+
+#define NOTE_OFF 0x80
+#define NOTE_ON 0x90
+#define PC 0xc0
+#define CC 0xb0
 
 SoftwareSerial midiSerial(0, 1);
 // MIDI_CREATE_INSTANCE(HardwareSerial, midiSerial, hxMidiInterface);
@@ -86,7 +95,7 @@ void onControlChange(byte channel, byte number, byte value) {
     case(HX_MORPH_0_SET_DEC_TIME_CC):
       HX_MORPH_0_MORPH_DEC_TIME_MS = value * 100;
       break;
-    /*  
+      
     case(HX_MORPH_1_SET_INC_TIME_CC):
       HX_MORPH_1_MORPH_INC_TIME_MS = value * 100;
       break;
@@ -108,7 +117,7 @@ void onControlChange(byte channel, byte number, byte value) {
       else
         morphExec(MorphDir::inc, HX_MORPH_1_MORPH_INC_TIME_MS);
       break;
-    */
+    
     default:
       break;
   }
@@ -177,6 +186,51 @@ void onNoteOff(byte channel, byte note, byte velocity) {
   }
 }
 
+
+
+void midiRead() {
+  if (!midiSerial.available()) 
+    return;
+    
+  midiInByte = midiSerial.read();
+  
+  // check for command
+  switch(midiInByte & 0xf0) {
+    case(NOTE_OFF):   // Note Off
+    case(NOTE_ON):   // Note On
+    case(CC):   // Continuous Controller
+    case(PC):   // Patch Change
+      midiInPos = 0;
+      midiBufferIn[midiInPos++] = midiInByte;
+      break;
+
+    default:
+      midiBufferIn[midiInPos++] = midiInByte;
+      break;
+  }
+  midiInPos %= 16;
+  
+  if(midiInPos == 2 && midiBufferIn[0] == 0xc0) {
+    onProgramChange(midiBufferIn[0] & 0x0f, midiBufferIn[1]);
+    midiInPos = 0;
+  }
+  else if(midiInPos == 3) {
+    switch(midiBufferIn[0]) {
+      case(NOTE_OFF):
+        onNoteOff(midiBufferIn[0] & 0x0f, midiBufferIn[1], midiBufferIn[2]);
+        break;
+      case(NOTE_ON):
+        onNoteOn(midiBufferIn[0] & 0x0f, midiBufferIn[1], midiBufferIn[2]);
+        break;
+      case(CC):
+        onControlChange(midiBufferIn[0] & 0x0f, midiBufferIn[1], midiBufferIn[2]);
+        break;
+    }
+    midiInPos = 0;
+  }  
+}
+
+
 void setup() {
   midiSerial.begin(31250);
   /*hxMidiInterface.setHandleProgramChange(onProgramChange);
@@ -190,7 +244,7 @@ void setup() {
 
 void loop() {
   //hxMidiInterface.read();
-  midiSerial.read();
+  midiRead();
   do_morph(&morphThread);
   onSwitchHold(&switchHoldThread);
 }
