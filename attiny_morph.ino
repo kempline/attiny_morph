@@ -1,12 +1,8 @@
-// #include <SoftwareSerial.h>
+#include <SoftwareSerial.h>
 #include <MIDI.h>
 #include <pt.h>
 
-#include <NeoSWSerial.h>
-
-//#define WITH_FBV
 #define WITH_MIDI
-
 
 enum MorphDir {
   inc = 0,
@@ -68,14 +64,7 @@ uint16_t HX_MORPH_2_MORPH_DEC_TIME_MS = 2000;
 
 // SoftwareSerial midiSerial(0, 1);
 #ifdef WITH_MIDI
-  NeoSWSerial midiSerial(0, 1);
-#endif
-
-#ifdef WITH_FBV
-
-//SoftwareSerial fbvSerial(2, 3); // RX, TX
-  NeoSWSerial fbvSerial(2, 3); // RX, TX
-  #define PIN_RE_DE 4
+  SoftwareSerial midiSerial(0, 1);
 #endif
 
 static struct OpenMorph morphThread;
