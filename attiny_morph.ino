@@ -1,6 +1,12 @@
-#include <SoftwareSerial.h>
+// #include <SoftwareSerial.h>
 #include <MIDI.h>
 #include <pt.h>
+
+#include <NeoSWSerial.h>
+
+//#define WITH_FBV
+#define WITH_MIDI
+
 
 enum MorphDir {
   inc = 0,
@@ -60,13 +66,24 @@ uint16_t HX_MORPH_2_MORPH_DEC_TIME_MS = 2000;
 #define MIDI_PC 0xc0
 #define MIDI_CC 0xb0
 
-SoftwareSerial midiSerial(0, 1);
+// SoftwareSerial midiSerial(0, 1);
+#ifdef WITH_MIDI
+  NeoSWSerial midiSerial(0, 1);
+#endif
+
+#ifdef WITH_FBV
+
+//SoftwareSerial fbvSerial(2, 3); // RX, TX
+  NeoSWSerial fbvSerial(2, 3); // RX, TX
+  #define PIN_RE_DE 4
+#endif
 
 static struct OpenMorph morphThread;
 static struct Switch3Hold switchHoldThread;
 
 // void onMorphBegin(uint8_t controlId, MorphDir dir, uint8_t startValue, uint8_t stopValue) {}
 
+#ifdef WITH_MIDI
 void sendProgramChange(byte channel, byte number) {
   midiSerial.write(MIDI_PC + channel);
   midiSerial.write(number);
@@ -203,8 +220,9 @@ void onNoteOff(byte channel, byte note, byte velocity) {
 }
 
 void midiRead() {
+  // midiSerial.listen();
   while(midiSerial.available()) {
-
+    
     midiInByte = midiSerial.read();
   
     // check for command
@@ -247,18 +265,6 @@ void midiRead() {
       midiInPos = 0;
     }
   }
-}
-
-void setup() {
-  midiSerial.begin(31250);
-  PT_INIT(&morphThread);
-  PT_INIT(&switchHoldThread);
-}
-
-void loop() {
-  midiRead();
-  onMorph(&morphThread);
-  onSwitchHold(&switchHoldThread);
 }
 
 void onSwitchHold(struct Switch3Hold *pt) {
@@ -355,4 +361,200 @@ void morphExec(MorphDir dir, unsigned long morph_time) {
   morphThread.morphTime = morph_time;
   
   morphThread.inProgress = true; // activates the thread
+}
+#endif
+
+// ----------------------------------------------------------------------
+// FBV
+// ----------------------------------------------------------------------
+namespace FBV {
+  const uint8_t BANK_DOWN = 0x00;
+  const uint8_t BANK_UP = 0x10;
+  const uint8_t CHANNEL_A = 0x20;
+  const uint8_t CHANNEL_B = 0x30;
+  const uint8_t CHANNEL_C = 0x40;
+  const uint8_t CHANNEL_D = 0x50;
+  const uint8_t FAV_CHANNEL = 0x60;
+  const uint8_t AMP1 = 0x01;
+  const uint8_t AMP2 = 0x11;
+  const uint8_t REVERB = 0x21;
+  const uint8_t TREMOLO = 0x31;
+  const uint8_t MODULATION = 0x41;
+  const uint8_t DELAY = 0x51;
+  const uint8_t TAP_TEMPO = 0x61;
+  const uint8_t FX_LOOP = 0x02;
+  const uint8_t STOMP_BOX1 = 0x12;
+  const uint8_t STOMP_BOX2 = 0x22;
+  const uint8_t STOMP_BOX3 = 0x32;
+  const uint8_t PEDAL1_SWITCH = 0x43;
+  const uint8_t PEDAL1_GREEN = 0x03;
+  const uint8_t PEDAL1_RED = 0x13;
+  const uint8_t PEDAL2_SWITCH = 0x53;
+  const uint8_t PEDAL2_GREEN = 0x23;
+  const uint8_t PEDAL2_RED = 0x33;
+  const uint8_t NO_COLOR = 0x00;
+}
+
+uint8_t bufferIn[16];
+uint8_t bufferPos, inByte, pedal1State;
+uint8_t lastChannelSwitchId;
+uint8_t currentProg = 0;
+
+#ifdef WITH_FBV
+void switchLed(uint8_t hwId, uint8_t state) {
+  digitalWrite(PIN_RE_DE, HIGH); delay(1);
+  if(FBV::PEDAL1_SWITCH == hwId) {
+    uint8_t cmd1[5]={0xF0, 0x03, 0x04, FBV::PEDAL1_GREEN, !state};
+    uint8_t cmd2[5]={0xF0, 0x03, 0x04, FBV::PEDAL1_RED, state};
+    fbvSerial.write(cmd1, 5);
+    fbvSerial.write(cmd2, 5);
+  }
+  else if(FBV::PEDAL2_SWITCH == hwId) {
+    uint8_t cmd1[5]={0xF0, 0x03, 0x04, FBV::PEDAL2_GREEN, !state};
+    uint8_t cmd2[5]={0xF0, 0x03, 0x04, FBV::PEDAL2_RED, state};
+    fbvSerial.write(cmd1, 5);
+    fbvSerial.write(cmd2, 5);
+  }
+  else {
+    uint8_t cmd1[5]={0xF0, 0x03, 0x04, hwId, state};
+    fbvSerial.write(cmd1, 5);
+  }
+  fbvSerial.flush(); 
+  digitalWrite(PIN_RE_DE, LOW);
+}
+
+void onSwitchEvent(uint8_t switchId, uint8_t value) {
+  if(switchId == FBV::TAP_TEMPO && lastChannelSwitchId == FBV::CHANNEL_D)
+    switchId = FBV::CHANNEL_D;
+
+  // if(m_activeChannel == switchId)
+  //  switchId = FBV::TAP_TEMPO;
+  
+  switch(switchId) {
+    case(FBV::CHANNEL_A):
+    case(FBV::CHANNEL_B):
+    case(FBV::CHANNEL_C):
+    {
+      if(0 == value)
+        return;
+
+      switchLed(FBV::CHANNEL_A, 0x00);
+      switchLed(FBV::CHANNEL_B, 0x00);
+      switchLed(FBV::CHANNEL_C, 0x00);
+      switchLed(switchId, 0x01);
+      
+      // openHxStomp.switchProgram(m_currentProg);
+      currentProg = byte(currentProg/3) * 3 + (switchId/0x10 - 2);
+#ifdef WITH_MIDI
+      sendProgramChange(HX_STOMP_MIDI_CHANNEL, currentProg);
+#endif
+      break;
+    }
+    case(FBV::CHANNEL_D):
+      
+      break;
+    case(FBV::TAP_TEMPO):
+      
+      break;
+    case(FBV::PEDAL1_SWITCH):
+      if(0 == value)
+        return;
+      
+      break;
+    default:
+      break;
+  }
+  
+  //if(switchId == FBV::TAP_TEMPO)
+  //  switchId = m_lastSwitchId;
+}
+
+void onPedalEvent(uint8_t hwId, uint8_t value) {
+  switch(pedal1State) {
+    case(0):
+      // openHxStomp.sendControlChange(VOL_CC, value, HX_STOMP_MIDI_CHANNEL);
+      break;
+    default:
+      // openHxStomp.sendControlChange(WAH_CC, value, HX_STOMP_MIDI_CHANNEL);
+      break;
+  }
+}
+  
+bool fbvRead() {
+  //fbvSerial.listen();
+  if (fbvSerial.available()) {
+    inByte = fbvSerial.read();
+    
+    if(0xF0 == inByte)
+      bufferPos = 0;
+
+    bufferPos %= 16;
+    bufferIn[bufferPos++] = inByte;
+
+    if(bufferPos <= 1)
+      return true;
+
+    if(bufferIn[1] == bufferPos - 2) { // minus two for the first bytes (244, x; x = len of parameters)
+      // we have a complete message here
+
+      uint8_t fctCode = bufferIn[2];
+      uint8_t idx = 0;
+      switch(fctCode) {
+        case(0x81):
+          onSwitchEvent(bufferIn[3], bufferIn[4]);
+          if(bufferIn[3] != FBV::TAP_TEMPO && bufferIn[3] != FBV::AMP1) 
+            lastChannelSwitchId = bufferIn[3];
+          break;
+        case(0x82):
+          onPedalEvent(bufferIn[3], bufferIn[4]);
+          break;
+        case(0x30):
+          break;
+        case(0x90):
+          // expectingKeepAliveSignal = 0;
+          break;
+        default:
+          break;
+      }
+      bufferPos = 0;
+    }
+    return true;    
+  }
+  return false;
+}
+#endif
+
+void setup() {
+  
+#ifdef WITH_FBV
+  fbvSerial.begin(31250);
+  pinMode(PIN_RE_DE, OUTPUT);
+  digitalWrite(PIN_RE_DE, LOW);
+#endif
+
+#ifdef WITH_MIDI
+  midiSerial.begin(31250);
+#endif
+  PT_INIT(&morphThread);
+  PT_INIT(&switchHoldThread);
+}
+
+void loop() {
+#ifdef WITH_MIDI
+  midiRead();
+  onMorph(&morphThread);
+  onSwitchHold(&switchHoldThread);
+#endif
+#ifdef WITH_FBV
+  fbvRead();
+#endif
+
+  
+  /*uint8_t cmd1[5]={0xF0, 0x03, 0x04, FBV::CHANNEL_A, 0x00};
+    fbvSerial.write(cmd1, 5);
+  delay(1000);
+  uint8_t cmd2[5]={0xF0, 0x03, 0x04, FBV::CHANNEL_A, 0x7f};
+    fbvSerial.write(cmd2, 5);
+  delay(1000);
+  */
 }
